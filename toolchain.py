@@ -644,7 +644,7 @@ class Recipe(object):
                 self.name, arch.arch))
             print("Warning: deleting the build and restarting.")
             shutil.rmtree(self.build_dir)
-            self.extract_arch(arch.arch)
+            self.extract_arch(arch.sdk, arch.arch)
 
         if self.has_marker("build_done"):
             print("Build python for {} already done.".format(arch.arch))

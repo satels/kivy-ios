@@ -8,8 +8,9 @@ import shutil
 class HostpythonRecipe(Recipe):
     version = "2.7.1"
     url = "https://www.python.org/ftp/python/{version}/Python-{version}.tar.bz2"
-    depends = ["libffi", ]
-    archs = ["i386"]
+    depends = ["libffi",]
+    archs = ["i386",]
+    sdks = ['macosx',]
 
     def init_with_ctx(self, ctx):
         super(HostpythonRecipe, self).init_with_ctx(ctx)
