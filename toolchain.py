@@ -124,7 +124,7 @@ class Arch(object):
         self.ctx = ctx
 
     def __str__(self):
-        return self.arch
+        return '{}-{}'.format(self.sdk, self.arch)
 
     @property
     def include_dirs(self):
@@ -200,7 +200,23 @@ class Arch64IOS(Arch):
     triple = "aarch64-apple-darwin13"
     version_min = "-miphoneos-version-min=7.0"
     sysroot = sh.xcrun("--sdk", "iphoneos", "--show-sdk-path").strip()
-    
+
+
+class Arch386Mac(Arch):
+    sdk = "macosx"
+    arch = "i386"
+    triple = "i386-apple-macosx10.10.0"
+    version_min = '-mmacosx-version-min=10.10'
+    sysroot = sh.xcrun("--sdk", "macosx", "--show-sdk-path").strip()
+
+
+class Arch64Mac(Arch):
+    sdk = "macosx"
+    arch = "x86_64"
+    triple = "x86_64-apple-macosx10.10.0"
+    version_min = '-mmacosx-version-min=10.10'
+    sysroot = sh.xcrun("--sdk", "macosx", "--show-sdk-path").strip()
+
 
 class Graph(object):
     # Taken from python-for-android/depsort
@@ -300,10 +316,13 @@ class Context(object):
         self.install_dir = "{}/dist/root".format(self.root_dir)
         self.include_dir = "{}/dist/include".format(self.root_dir)
         self.archs = (
-            ArchSimulator(self),
-            Arch64Simulator(self),
+            Arch386Mac(self),
+            Arch64Mac(self),
+#            ArchSimulator(self),
+#            Arch64Simulator(self),
             ArchIOS(self),
-            Arch64IOS(self))
+            Arch64IOS(self),
+        )
 
         # path to some tools
         self.ccache = sh.which("ccache")
@@ -351,6 +370,7 @@ class Recipe(object):
     version = None
     url = None
     archs = []
+    sdks = []
     depends = []
     optional_depends = []
     library = None
@@ -384,6 +404,8 @@ class Recipe(object):
             unlink(filename)
 
         print('Downloading {0}'.format(url))
+        import socket
+        socket.setdefaulttimeout(120)
         urlretrieve(url, filename, report_hook)
         return filename
 
@@ -436,6 +458,12 @@ class Recipe(object):
         print("Apply patch {}".format(filename))
         filename = join(self.recipe_dir, filename)
         sh.patch("-t", "-d", self.build_dir, "-p1", "-i", filename)
+
+    def copy_folder(self, folder, dest):
+        print("Copy {} to {}".format(folder, dest))
+        folder = join(self.recipe_dir, folder)
+        dest = join(self.build_dir, dest)
+        shutil.copytree(folder, dest)
 
     def copy_file(self, filename, dest):
         print("Copy {} to {}".format(filename, dest))
@@ -498,7 +526,8 @@ class Recipe(object):
         result = []
         for arch in self.ctx.archs:
             if not self.archs or (arch.arch in self.archs):
-                result.append(arch)
+                if not self.sdks or (arch.sdk in self.sdks):
+                    result.append(arch)
         return result
 
     @property
@@ -515,8 +544,8 @@ class Recipe(object):
             libraries.append(static_fn)
         return libraries
 
-    def get_build_dir(self, arch):
-        return join(self.ctx.build_dir, self.name, arch, self.archive_root)
+    def get_build_dir(self, sdk, arch):
+        return join(self.ctx.build_dir, self.name, sdk, arch, self.archive_root)
 
     # Public Recipe API to be subclassed if needed
 
@@ -587,11 +616,11 @@ class Recipe(object):
     def extract(self):
         # recipe tmp directory
         for arch in self.filtered_archs:
-            print("Extract {} for {}".format(self.name, arch.arch))
-            self.extract_arch(arch.arch)
+            print("Extract {} for {}".format(self.name, arch))
+            self.extract_arch(arch.sdk, arch.arch)
 
-    def extract_arch(self, arch):
-        build_dir = join(self.ctx.build_dir, self.name, arch)
+    def extract_arch(self, sdk, arch):
+        build_dir = join(self.ctx.build_dir, self.name, sdk, arch)
         dest_dir = join(build_dir, self.archive_root)
         if self.custom_dir:
             if exists(dest_dir):
@@ -605,11 +634,11 @@ class Recipe(object):
                 shutil.copytree(src_dir, dest_dir)
                 return
             ensure_dir(build_dir)
-            self.extract_file(self.archive_fn, build_dir) 
+            self.extract_file(self.archive_fn, build_dir)
 
     @cache_execution
     def build(self, arch):
-        self.build_dir = self.get_build_dir(arch.arch)
+        self.build_dir = self.get_build_dir(arch.sdk, arch.arch)
         if self.has_marker("building"):
             print("Warning: {} build for {} has been incomplete".format(
                 self.name, arch.arch))
@@ -690,10 +719,13 @@ class Recipe(object):
             return
         args = []
         for arch in self.filtered_archs:
-            library_fn = library.format(arch=arch)
+            if isinstance(library, dict):
+                library_fn = library[arch.sdk].format(arch=arch)
+            else:
+                library_fn = library.format(arch=arch)
             args += [
                 "-arch", arch.arch,
-                join(self.get_build_dir(arch.arch), library_fn)]
+                join(self.get_build_dir(arch.sdk, arch.arch), library_fn)]
         shprint(sh.lipo, "-create", "-output", filename, *args)
 
     @cache_execution
@@ -701,7 +733,7 @@ class Recipe(object):
         if not self.frameworks:
             return
         arch = self.filtered_archs[0]
-        build_dir = self.get_build_dir(arch.arch)
+        build_dir = self.get_build_dir(arch.sdk, arch.arch)
         for framework in self.frameworks:
             print(" - Install {}".format(framework))
             src = join(build_dir, framework)
@@ -716,7 +748,7 @@ class Recipe(object):
         if not self.sources:
             return
         arch = self.filtered_archs[0]
-        build_dir = self.get_build_dir(arch.arch)
+        build_dir = self.get_build_dir(arch.sdk, arch.arch)
         for source in self.sources:
             print(" - Install {}".format(source))
             src = join(build_dir, source)
@@ -731,7 +763,7 @@ class Recipe(object):
         if not self.include_dir:
             return
         if self.include_per_arch:
-            archs = self.ctx.archs
+            archs = self.filtered_archs
         else:
             archs = self.filtered_archs[:1]
 
@@ -746,7 +778,7 @@ class Recipe(object):
             dest_dir = join(self.ctx.include_dir, arch_dir, self.name)
             if exists(dest_dir):
                 shutil.rmtree(dest_dir)
-            build_dir = self.get_build_dir(arch.arch)
+            build_dir = self.get_build_dir(arch.sdk, arch.arch)
 
             for include_dir in include_dirs:
                 dest_name = None
@@ -758,6 +790,8 @@ class Recipe(object):
                     dest_name = basename(src_dir)
                 if isdir(src_dir):
                     shutil.copytree(src_dir, dest_dir)
+                    #if not isdir(dest_dir):
+                    #    shutil.copytree(src_dir, dest_dir)
                 else:
                     dest = join(dest_dir, dest_name)
                     print("Copy {} to {}".format(src_dir, dest))
@@ -814,7 +848,7 @@ class PythonRecipe(Recipe):
         if env is None:
             env = self.get_recipe_env(arch)
         print("Install {} into the site-packages".format(name))
-        build_dir = self.get_build_dir(arch.arch)
+        build_dir = self.get_build_dir(arch.sdk, arch.arch)
         chdir(build_dir)
         hostpython = sh.Command(self.ctx.hostpython)
         iosbuild = join(build_dir, "iosbuild")
@@ -884,7 +918,7 @@ class CythonRecipe(PythonRecipe):
             try:
                 shprint(hostpython, "setup.py", "build_ext", "-g",
                         _env=build_env)
-            except:
+            except Exception as exc:
                 pass
         self.cythonize_build()
         shprint(hostpython, "setup.py", "build_ext", "-g",
@@ -976,6 +1010,9 @@ def update_pbxproj(filename):
 
     from mod_pbxproj import XcodeProject
     project = XcodeProject.Load(filename)
+
+    project.add_flags('CLANG_ENABLE_MODULES', ['YES',])
+
     sysroot = sh.xcrun("--sdk", "iphonesimulator", "--show-sdk-path").strip()
 
     group = project.get_or_create_group("Frameworks")

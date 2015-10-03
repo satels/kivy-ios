@@ -64,7 +64,7 @@ class PythonRecipe(Recipe):
     def install(self):
         arch = list(self.filtered_archs)[0]
         build_env = arch.get_env()
-        build_dir = self.get_build_dir(arch.arch)
+        build_dir = self.get_build_dir(arch.sdk, arch.arch)
         build_env["PATH"] = os.environ["PATH"]
         shprint(sh.make,
                 "-C", build_dir,

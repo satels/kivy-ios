@@ -27,7 +27,7 @@ class LibSDL2TTFRecipe(Recipe):
     def install(self):
         for arch in self.filtered_archs:
             shutil.copy(
-                join(self.get_build_dir(arch.arch), "SDL_ttf.h"),
+                join(self.get_build_dir(arch.sdk, arch.arch), "SDL_ttf.h"),
                 join(self.ctx.include_dir, "common", "SDL2"))
 
 recipe = LibSDL2TTFRecipe()
