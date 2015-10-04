@@ -6,7 +6,6 @@ class LibSDL2MixerRecipe(Recipe):
     version = "2.0.0"
     url = "http://www.libsdl.org/projects/SDL_mixer/release/SDL2_mixer-{version}.tar.gz"
     library = "Xcode-iOS/build/Release-{arch.sdk}/libSDL2_mixer.a"
-    #include_dir = ["SDL_mixer.h", 'external']
     include_dir = "SDL_mixer.h"
     depends = ["sdl2"]
     pbx_frameworks = ["ImageIO"]
